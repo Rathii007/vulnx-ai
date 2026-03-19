@@ -18,6 +18,7 @@ This keeps the algorithm simple and transparent for educational use.
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Any
 
 from fpdf import FPDF
@@ -70,20 +71,55 @@ def calculate_score(vulnerabilities: list[dict[str, Any]]) -> float:
     """
     Return a security score between 0 (worst) and 100 (best).
 
-    The score penalises each finding by its severity weight and
-    normalises the total against a configurable ceiling.
+    Improved model overview:
+    1) Base severity weight from config.
+    2) Confidence multiplier (high > medium > low).
+    3) Category/name impact multiplier so hardening-only findings
+       (for example missing headers) do not dominate exploitability risk.
+    4) Exponential decay curve for smoother score distribution.
     """
     if not vulnerabilities:
         return 100.0
 
-    total_penalty = sum(
-        SEVERITY_WEIGHTS.get(v.get("severity", "Low"), 1)
-        for v in vulnerabilities
-    )
+    confidence_multipliers = {
+        "high": 1.0,
+        "medium": 0.75,
+        "low": 0.5,
+    }
 
-    # Normalise: 50 penalty points → score 0
-    max_penalty = 50.0
-    score = max(0.0, 100.0 - (total_penalty / max_penalty) * 100.0)
+    def _category_multiplier(owasp_category: str) -> float:
+        value = (owasp_category or "").lower()
+        if value.startswith("a03"):
+            return 1.2  # Injection-style findings are typically more exploitable.
+        if value.startswith("a01"):
+            return 1.0
+        if value.startswith("a05"):
+            return 0.7  # Hardening gaps are important but usually less immediate.
+        return 0.85
+
+    def _name_multiplier(name: str) -> float:
+        value = (name or "").lower()
+        if "security header baseline gaps" in value:
+            return 0.6
+        if value.startswith("insecure cookie"):
+            return 0.8
+        return 1.0
+
+    total_penalty = 0.0
+    for finding in vulnerabilities:
+        severity = finding.get("severity", "Low")
+        base = float(SEVERITY_WEIGHTS.get(severity, 1))
+        confidence = str(finding.get("confidence", "medium")).lower()
+        confidence_factor = confidence_multipliers.get(confidence, 0.75)
+        category_factor = _category_multiplier(str(finding.get("owasp_category", "")))
+        name_factor = _name_multiplier(str(finding.get("name", "")))
+
+        total_penalty += base * confidence_factor * category_factor * name_factor
+
+    # Exponential decay gives a smoother score spread than hard linear clipping.
+    decay_constant = 30.0
+    score = 100.0 * math.exp(-total_penalty / decay_constant)
+    score = max(0.0, min(100.0, score))
     return round(score, 1)
 
 

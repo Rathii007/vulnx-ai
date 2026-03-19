@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 _BASE_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(_BASE_DIR / ".env")
-load_dotenv()
+load_dotenv(_BASE_DIR / ".env.local", override=True)
 
 
 def _as_bool(value: str | None, default: bool) -> bool:
@@ -45,6 +45,16 @@ RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"))
 # ── Monitoring / error tracking ─────────────────────────────────────
 ENABLE_METRICS = _as_bool(os.getenv("ENABLE_METRICS"), True)
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+
+# ── AI assistant settings ───────────────────────────────────────────
+AI_ENABLED = _as_bool(os.getenv("AI_ENABLED"), True)
+AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama").strip().lower()
+AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "20"))
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 # ── Crawler settings ────────────────────────────────────────────────
 MAX_CRAWL_DEPTH = int(os.getenv("MAX_CRAWL_DEPTH", "3"))

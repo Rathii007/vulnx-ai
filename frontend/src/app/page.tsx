@@ -43,6 +43,14 @@ type AuthToken = {
   expires_in: number;
 };
 
+type AISummary = {
+  executive_summary: string;
+  risk_rating: string;
+  key_findings: string;
+  top_risks: string[];
+  immediate_actions: string[];
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const TOKEN_STORAGE_KEY = "scanner_access_token";
 
@@ -93,6 +101,9 @@ export default function Home() {
   const [loadingScans, setLoadingScans] = useState(false);
   const [creatingScan, setCreatingScan] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [loadingAiSummary, setLoadingAiSummary] = useState(false);
+  const [aiSummary, setAiSummary] = useState<AISummary | null>(null);
+  const [stoppingScans, setStoppingScans] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const streamRef = useRef<EventSource | null>(null);
 
@@ -157,6 +168,17 @@ export default function Home() {
   }, []);
 
   const selectedStatus = selectedScan?.status ?? "idle";
+
+  const userScanNumberById = useMemo(() => {
+    const ordered = [...scans].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
+    const result = new Map<number, number>();
+    ordered.forEach((scan, idx) => {
+      result.set(scan.id, idx + 1);
+    });
+    return result;
+  }, [scans]);
 
   const progress = useMemo(() => {
     if (!selectedScanId || progressEvent?.scan_id !== selectedScanId) {
@@ -224,7 +246,7 @@ export default function Home() {
       const data = JSON.parse(event.data) as ProgressEvent;
       setProgressEvent(data);
 
-      if (data.status === "completed" || data.status === "failed") {
+      if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
         stream.close();
         void loadScans();
         void loadScanDetails(scanId);
@@ -319,6 +341,94 @@ export default function Home() {
     }
   }, [selectedScan, token, onLogout]);
 
+  const onGenerateAiSummary = useCallback(async () => {
+    if (!token || !selectedScan || selectedScan.status !== "completed") {
+      return;
+    }
+
+    setLoadingAiSummary(true);
+    setError(null);
+
+    try {
+      const response = await fetch(buildApiUrl(`/api/scans/${selectedScan.id}/ai-summary`), {
+        headers: authHeaders(token),
+      });
+
+      if (response.status === 401) {
+        onLogout();
+        throw new Error("Session expired. Please login again.");
+      }
+      if (!response.ok) {
+        let detail = "Could not generate AI triage summary.";
+        try {
+          const body = (await response.json()) as { detail?: string };
+          if (body?.detail) {
+            detail = body.detail;
+          }
+        } catch {
+          // Ignore parse errors and keep generic message.
+        }
+        throw new Error(detail);
+      }
+
+      const data = (await response.json()) as AISummary;
+      setAiSummary(data);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unknown error";
+      setError(message);
+    } finally {
+      setLoadingAiSummary(false);
+    }
+  }, [onLogout, selectedScan, token]);
+
+  const onCancelScan = useCallback(async () => {
+    if (!token || !selectedScan) {
+      return;
+    }
+
+    const scanId = selectedScan.id;
+    setStoppingScans((prev) => new Set(prev).add(scanId));
+    setError(null);
+
+    try {
+      const response = await fetch(buildApiUrl(`/api/scans/${scanId}`), {
+        method: "DELETE",
+        headers: authHeaders(token),
+      });
+
+      if (response.status === 401) {
+        onLogout();
+        throw new Error("Session expired. Please login again.");
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        let errorMsg = "Could not cancel scan.";
+        try {
+          const body = JSON.parse(text) as { detail?: string };
+          if (body?.detail) {
+            errorMsg = body.detail;
+          }
+        } catch {
+          // Keep generic message
+        }
+        throw new Error(errorMsg);
+      }
+
+      // Refresh scan details to update status
+      void loadScanDetails(scanId);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unknown error";
+      setError(message);
+    } finally {
+      setStoppingScans((prev) => {
+        const next = new Set(prev);
+        next.delete(scanId);
+        return next;
+      });
+    }
+  }, [token, selectedScan, onLogout, loadScanDetails]);
+
   useEffect(() => {
     if (!token) return;
     void loadScans();
@@ -337,6 +447,10 @@ export default function Home() {
       openProgressStream(selectedScanId);
     }
   }, [selectedScanId, selectedScan, openProgressStream, token]);
+
+  useEffect(() => {
+    setAiSummary(null);
+  }, [selectedScanId]);
 
   useEffect(() => {
     return () => {
@@ -464,6 +578,7 @@ export default function Home() {
                       type="button"
                     >
                       <div>
+                        <p className="tiny">Scan #{userScanNumberById.get(scan.id) ?? "-"}</p>
                         <p className="scan-target">{scan.target_url}</p>
                         <p className="tiny">Created: {formatDate(scan.created_at)}</p>
                       </div>
@@ -486,7 +601,7 @@ export default function Home() {
             ) : (
               <>
                 <div className="detail-header">
-                  <h2>Scan #{selectedScan.id}</h2>
+                  <h2>Scan #{userScanNumberById.get(selectedScan.id) ?? selectedScan.id}</h2>
                   <span className={`status-badge status-${selectedScan.status}`}>
                     {selectedScan.status}
                   </span>
@@ -528,17 +643,92 @@ export default function Home() {
 
                 <div className="panel-title-row findings-heading">
                   <h3>Findings</h3>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={selectedScan.status !== "completed" || downloadingPdf}
-                    onClick={() => {
-                      void onDownloadPdf();
-                    }}
-                  >
-                    {downloadingPdf ? "Preparing PDF..." : "Download PDF"}
-                  </button>
+                  <div className="action-row">
+                    {(selectedScan.status === "pending" ||
+                      selectedScan.status === "crawling" ||
+                      selectedScan.status === "scanning") && (
+                      <button
+                        type="button"
+                        className="secondary-button danger-button"
+                        disabled={stoppingScans.has(selectedScan.id)}
+                        onClick={() => {
+                          void onCancelScan();
+                        }}
+                      >
+                        {stoppingScans.has(selectedScan.id) ? "Stopping..." : "Stop Scan"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={selectedScan.status !== "completed" || loadingAiSummary}
+                      onClick={() => {
+                        void onGenerateAiSummary();
+                      }}
+                    >
+                      {loadingAiSummary ? "Analyzing..." : "Generate AI Triage"}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={selectedScan.status !== "completed" || downloadingPdf}
+                      onClick={() => {
+                        void onDownloadPdf();
+                      }}
+                    >
+                      {downloadingPdf ? "Preparing PDF..." : "Download PDF"}
+                    </button>
+                  </div>
                 </div>
+
+                {aiSummary ? (
+                  <section className="ai-summary-panel">
+                    <div className="panel-title-row">
+                      <h3>AI Triage Highlights</h3>
+                    </div>
+
+                    <div className="risk-rating-box">
+                      <strong>Overall Risk Rating:</strong>
+                      <span className={`risk-badge risk-${aiSummary.risk_rating.toLowerCase()}`}>
+                        {aiSummary.risk_rating}
+                      </span>
+                    </div>
+
+                    <div className="summary-section">
+                      <h4>Executive Summary</h4>
+                      <p>{aiSummary.executive_summary}</p>
+                    </div>
+
+                    {aiSummary.key_findings ? (
+                      <div className="findings-section">
+                        <h4>Key Findings</h4>
+                        <p>{aiSummary.key_findings}</p>
+                      </div>
+                    ) : null}
+
+                    {aiSummary.top_risks.length > 0 ? (
+                      <div className="risks-section">
+                        <h4>Top Security Risks</h4>
+                        <ul className="ai-points risk-list">
+                          {aiSummary.top_risks.map((risk, idx) => (
+                            <li key={`risk-${idx}`}>{risk}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {aiSummary.immediate_actions.length > 0 ? (
+                      <div className="actions-section immediate">
+                        <h4>Immediate Actions</h4>
+                        <ul className="ai-points action-list">
+                          {aiSummary.immediate_actions.map((action, idx) => (
+                            <li key={`immediate-${idx}`}>{action}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
 
                 {selectedScan.vulnerabilities.length === 0 ? (
                   <p className="empty-state slim">No vulnerabilities recorded for this scan.</p>

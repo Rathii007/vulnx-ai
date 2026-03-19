@@ -104,3 +104,30 @@ class ProgressEvent(BaseModel):
     status: str
     progress: int = Field(ge=0, le=100)
     message: str = ""
+
+
+class AISummaryOut(BaseModel):
+    """AI-assisted triage summary for a completed scan."""
+
+    # Executive overview
+    executive_summary: str
+    risk_rating: str
+    key_findings: str
+
+    # Detailed risk assessment
+    top_risks: list[str]
+    immediate_actions: list[str]
+    short_term_actions: list[str]
+    long_term_strategy: list[str]
+
+    # Guidance and context
+    remediation_guidance: str
+    confidence_notes: str
+
+    # Metadata
+    fallback_used: bool
+    provider: str
+    model: Optional[str] = None
+    source_type: str
+    source_label: str
+    is_remote_ai: bool

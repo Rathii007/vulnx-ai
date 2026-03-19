@@ -57,8 +57,9 @@ class Scan(Base):
         - "pending"    → created, not yet started
         - "crawling"   → discovering pages
         - "scanning"   → running vulnerability tests
-        - "completed"  → finished
+        - "completed"  → finished successfully
         - "failed"     → something went wrong
+        - "cancelled"  → user stopped the scan
     """
 
     __tablename__ = "scans"

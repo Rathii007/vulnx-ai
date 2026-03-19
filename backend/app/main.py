@@ -34,6 +34,7 @@ from sqlalchemy.orm import selectinload
 from .database import get_db, init_db
 from .models import Scan, User, Vulnerability
 from .schemas import (
+    AISummaryOut,
     ScanCreate,
     ScanOut,
     ScanSummary,
@@ -42,6 +43,7 @@ from .schemas import (
     UserOut,
     UserRegister,
 )
+from .ai_assistant import generate_ai_summary
 from .scanner import run_scan, get_progress
 from .report import calculate_score, generate_pdf
 from .security import (
@@ -54,6 +56,10 @@ from .security import (
     verify_password,
 )
 from .config import ALLOWED_ORIGINS, ENABLE_METRICS, SENTRY_DSN
+
+
+# ── In-memory task tracking for scan cancellation ───────────────────
+_scan_tasks: dict[int, asyncio.Task] = {}
 
 
 # ── App creation ────────────────────────────────────────────────────
@@ -180,7 +186,8 @@ async def create_scan(
     await db.refresh(scan)
 
     # Launch scan in the background
-    asyncio.create_task(_background_scan(scan.id, target))
+    task = asyncio.create_task(_background_scan(scan.id, target))
+    _scan_tasks[scan.id] = task
 
     return ScanOut(
         id=scan.id,
@@ -223,6 +230,15 @@ async def _background_scan(scan_id: int, target_url: str):
             scan.status = "completed"
             scan.completed_at = datetime.datetime.utcnow()
 
+        except asyncio.CancelledError:
+            # Scan was cancelled by user
+            scan.status = "cancelled"
+            scan.completed_at = datetime.datetime.utcnow()
+            await db.commit()
+            if scan_id in _scan_tasks:
+                del _scan_tasks[scan_id]
+            return
+
         except Exception as exc:
             scan.status = "failed"
             scan.score = None
@@ -236,6 +252,10 @@ async def _background_scan(scan_id: int, target_url: str):
             ))
 
         await db.commit()
+        
+        # Clean up task reference
+        if scan_id in _scan_tasks:
+            del _scan_tasks[scan_id]
 
 
 # ── GET /api/scans → list all scans ────────────────────────────────
@@ -272,6 +292,45 @@ async def get_scan(
     return scan
 
 
+# ── DELETE /api/scans/{id} → cancel an in-progress scan ─────────────
+
+@app.delete("/api/scans/{scan_id}", status_code=204)
+async def cancel_scan(
+    scan_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Cancel a scan that is currently in progress.
+    
+    Only pending, crawling, and scanning statuses can be cancelled.
+    Returns 204 No Content on success.
+    """
+    result = await db.execute(
+        select(Scan)
+        .where((Scan.id == scan_id) & (Scan.user_id == current_user.id))
+    )
+    scan = result.scalar_one_or_none()
+    if not scan:
+        raise HTTPException(404, "Scan not found")
+    
+    # Only allow cancelling in-progress scans
+    if scan.status not in ("pending", "crawling", "scanning"):
+        raise HTTPException(
+            400,
+            f"Cannot cancel scan with status '{scan.status}'. Only pending, crawling, or scanning scans can be cancelled."
+        )
+    
+    # Cancel the background task
+    if scan_id in _scan_tasks:
+        task = _scan_tasks[scan_id]
+        task.cancel()
+        logger.info(f"Cancelled scan task {scan_id}")
+    
+    # Task will handle status update when it receives CancelledError
+    return Response(status_code=204)
+
+
 # ── GET /api/scans/{id}/progress → SSE stream ──────────────────────
 
 @app.get("/api/scans/{scan_id}/progress")
@@ -306,7 +365,7 @@ async def scan_progress(
                 })
                 yield f"data: {data}\n\n"
                 prev = progress
-                if progress["status"] in ("completed", "failed"):
+                if progress["status"] in ("completed", "failed", "cancelled"):
                     break
             await asyncio.sleep(0.5)
 
@@ -363,3 +422,45 @@ async def download_pdf(
             "Content-Disposition": f'attachment; filename="scan_{scan_id}_report.pdf"'
         },
     )
+
+
+@app.get("/api/scans/{scan_id}/ai-summary", response_model=AISummaryOut)
+async def ai_summary(
+    scan_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Scan)
+        .options(selectinload(Scan.vulnerabilities))
+        .where((Scan.id == scan_id) & (Scan.user_id == current_user.id))
+    )
+    scan = result.scalar_one_or_none()
+    if not scan:
+        raise HTTPException(404, "Scan not found")
+    if scan.status != "completed":
+        raise HTTPException(400, "Scan has not completed yet")
+
+    vulnerabilities = [
+        {
+            "name": v.name,
+            "severity": v.severity,
+            "endpoint": v.endpoint,
+            "confidence": v.confidence,
+            "owasp_category": v.owasp_category,
+        }
+        for v in scan.vulnerabilities
+    ]
+
+    try:
+        return await generate_ai_summary(
+            target_url=scan.target_url,
+            score=float(scan.score or 0.0),
+            vulnerabilities=vulnerabilities,
+        )
+    except ValueError as exc:
+        # Groq-only mode and missing API key should be surfaced as config errors.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("AI summary generation failed for scan %s", scan_id)
+        raise HTTPException(status_code=502, detail="AI provider request failed") from exc

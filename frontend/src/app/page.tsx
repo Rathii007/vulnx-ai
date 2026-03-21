@@ -49,10 +49,14 @@ type AISummary = {
   key_findings: string;
   top_risks: string[];
   immediate_actions: string[];
+  provider: string;
+  source_label: string;
+  fallback_used: boolean;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const TOKEN_STORAGE_KEY = "scanner_access_token";
+const GITHUB_REPO_URL = "https://github.com/Rathii007/AI-Powered-Web-Vulnerability-Scanner";
 
 function buildApiUrl(path: string, tokenForQuery?: string) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
@@ -460,62 +464,77 @@ export default function Home() {
 
   if (!token) {
     return (
-      <div className="app-shell">
+      <div className="app-shell app-shell-landing">
         <main className="dashboard">
-          <header className="hero">
-            <p className="kicker">SECURE ACCESS</p>
-            <h1>Sign In To Scanner</h1>
-            <p className="hero-subtext">Create an account or login to access your private scan workspace.</p>
-          </header>
+          <section className="luxe-home">
+            <span className="luxe-dot" aria-hidden="true" />
 
-          <section className="panel launch-panel" style={{ maxWidth: "560px" }}>
-            <form className="scan-form" onSubmit={onAuthSubmit}>
-              <label htmlFor="username">Username</label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-              />
+            <article className="luxe-hero">
+              <p className="luxe-eyebrow">VULNX SECURITY</p>
+              <h1>Build fast. Stay secure.</h1>
+              <p>
+                Continuous web app scanning with live progress, focused findings, and clean reports.
+              </p>
+              <a className="ghost-link" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
+                GitHub
+              </a>
+            </article>
 
-              {authMode === "register" ? (
-                <>
-                  <label htmlFor="email">Email</label>
-                  <input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </>
-              ) : null}
+            <section className="panel launch-panel luxe-auth-card">
+              <h2>{authMode === "login" ? "Welcome Back" : "Create Your Account"}</h2>
+              <p className="tiny auth-caption">
+                {authMode === "login"
+                  ? "Sign in to access your private scan workspace."
+                  : "Register to launch and track scans in your own workspace."}
+              </p>
+              <form className="scan-form" onSubmit={onAuthSubmit}>
+                <label htmlFor="username">Username</label>
+                <input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                />
 
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                minLength={8}
-                required
-              />
+                {authMode === "register" ? (
+                  <>
+                    <label htmlFor="email">Email</label>
+                    <input
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </>
+                ) : null}
 
-              <div className="input-row">
-                <button type="submit" disabled={authLoading}>
-                  {authLoading ? "Please wait..." : authMode === "login" ? "Login" : "Create Account"}
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => setAuthMode((prev) => (prev === "login" ? "register" : "login"))}
-                >
-                  {authMode === "login" ? "Switch to Register" : "Switch to Login"}
-                </button>
-              </div>
-            </form>
-            {error ? <p className="error-text">{error}</p> : null}
+                <label htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={8}
+                  required
+                />
+
+                <div className="input-row">
+                  <button type="submit" disabled={authLoading}>
+                    {authLoading ? "Please wait..." : authMode === "login" ? "Login" : "Create Account"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setAuthMode((prev) => (prev === "login" ? "register" : "login"))}
+                  >
+                    {authMode === "login" ? "Switch to Register" : "Switch to Login"}
+                  </button>
+                </div>
+              </form>
+              {error ? <p className="error-text">{error}</p> : null}
+            </section>
           </section>
         </main>
       </div>
@@ -530,7 +549,7 @@ export default function Home() {
       <main className="dashboard">
         <header className="hero">
           <p className="kicker">WEB APP SECURITY WORKBENCH</p>
-          <h1>Vulnerability Scanner</h1>
+          <h1>VulnX</h1>
           <p className="hero-subtext">
             Launch scans, monitor progress in real time, and review actionable findings from your backend engine.
           </p>
@@ -685,6 +704,12 @@ export default function Home() {
                   <section className="ai-summary-panel">
                     <div className="panel-title-row">
                       <h3>AI Triage Highlights</h3>
+                      <div className="ai-source-wrap">
+                        <span className={`ai-source-badge ai-source-${aiSummary.provider === "ollama" ? "ollama" : aiSummary.provider === "groq" ? "groq" : "local"}`}>
+                          {aiSummary.source_label}
+                        </span>
+                        {aiSummary.fallback_used ? <p className="tiny">Fallback used</p> : null}
+                      </div>
                     </div>
 
                     <div className="risk-rating-box">

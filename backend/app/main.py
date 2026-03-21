@@ -65,12 +65,12 @@ _scan_tasks: dict[int, asyncio.Task] = {}
 # ── App creation ────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="VulnScanner API",
-    description="Educational Web Application Vulnerability Scanner",
+    title="VulnX API",
+    description="Educational web application security scanner",
     version="1.0.0",
 )
 
-logger = logging.getLogger("vulnscanner.api")
+logger = logging.getLogger("vulnx.api")
 REQUEST_COUNT = Counter("scanner_http_requests_total", "Total HTTP requests", ["method", "path", "status"])
 REQUEST_LATENCY = Histogram("scanner_http_request_latency_seconds", "HTTP request latency", ["method", "path"])
 
@@ -239,7 +239,7 @@ async def _background_scan(scan_id: int, target_url: str):
                 del _scan_tasks[scan_id]
             return
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             scan.status = "failed"
             scan.score = None
             # Optionally store the error as a "vulnerability" for debugging
@@ -325,7 +325,7 @@ async def cancel_scan(
     if scan_id in _scan_tasks:
         task = _scan_tasks[scan_id]
         task.cancel()
-        logger.info(f"Cancelled scan task {scan_id}")
+        logger.info("Cancelled scan task %s", scan_id)
     
     # Task will handle status update when it receives CancelledError
     return Response(status_code=204)

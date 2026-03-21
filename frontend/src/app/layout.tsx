@@ -15,7 +15,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "VulnScanner Dashboard",
+  title: "VulnX Security Console",
   description: "Security scan dashboard with live progress and vulnerability reporting",
 };
 

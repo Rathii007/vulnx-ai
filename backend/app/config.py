@@ -63,7 +63,7 @@ CRAWL_CONCURRENCY = int(os.getenv("CRAWL_CONCURRENCY", "5"))
 
 # ── HTTP client defaults ────────────────────────────────────────────
 USER_AGENT = (
-    "VulnScanner/1.0 (Educational; "
+    "VulnX/1.0 (Educational; "
     "+https://github.com/yourusername/vuln-scanner)"
 )
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "10"))  # seconds

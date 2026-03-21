@@ -12,7 +12,7 @@ principle.
 from __future__ import annotations
 
 import datetime
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,10 @@ class ScanCreate(BaseModel):
         ...,
         description="Fully-qualified URL of the target website",
         examples=["http://testphp.vulnweb.com"],
+    )
+    scan_mode: Literal["quick", "deep"] = Field(
+        default="deep",
+        description="Scan profile: quick for faster checks, deep for broader coverage",
     )
 
 

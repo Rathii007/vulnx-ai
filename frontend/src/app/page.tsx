@@ -36,6 +36,7 @@ type ProgressEvent = {
 };
 
 type AuthMode = "login" | "register";
+type ScanMode = "quick" | "deep";
 
 type AuthToken = {
   access_token: string;
@@ -98,6 +99,7 @@ export default function Home() {
   const [token, setToken] = useState<string>("");
   const [authLoading, setAuthLoading] = useState(false);
   const [targetUrl, setTargetUrl] = useState("");
+  const [scanMode, setScanMode] = useState<ScanMode>("quick");
   const [scans, setScans] = useState<ScanSummary[]>([]);
   const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
   const [selectedScan, setSelectedScan] = useState<ScanDetail | null>(null);
@@ -274,7 +276,7 @@ export default function Home() {
       const res = await fetch(buildApiUrl("/api/scans"), {
         method: "POST",
         headers: authHeaders(token, true),
-        body: JSON.stringify({ target_url: targetUrl.trim() }),
+        body: JSON.stringify({ target_url: targetUrl.trim(), scan_mode: scanMode }),
       });
 
       if (res.status === 401) {
@@ -305,7 +307,7 @@ export default function Home() {
     } finally {
       setCreatingScan(false);
     }
-  }, [loadScans, openProgressStream, onLogout, targetUrl, token]);
+  }, [loadScans, openProgressStream, onLogout, scanMode, targetUrl, token]);
 
   const onDownloadPdf = useCallback(async () => {
     if (!token) return;
@@ -573,6 +575,17 @@ export default function Home() {
               <button type="submit" disabled={creatingScan}>
                 {creatingScan ? "Starting..." : "Start Scan"}
               </button>
+            </div>
+            <div className="scan-mode-row">
+              <label htmlFor="scanMode">Scan Mode</label>
+              <select
+                id="scanMode"
+                value={scanMode}
+                onChange={(e) => setScanMode(e.target.value as ScanMode)}
+              >
+                <option value="quick">Quick (faster)</option>
+                <option value="deep">Deep (thorough)</option>
+              </select>
             </div>
           </form>
           {error ? <p className="error-text">{error}</p> : null}

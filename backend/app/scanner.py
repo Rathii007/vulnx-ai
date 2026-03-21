@@ -38,7 +38,13 @@ from urllib.parse import urlencode, urlparse, urljoin, parse_qs, urlunparse
 
 import aiohttp
 
-from .config import USER_AGENT, REQUEST_TIMEOUT, SCAN_CONCURRENCY
+from .config import (
+    USER_AGENT,
+    REQUEST_TIMEOUT,
+    SCAN_CONCURRENCY,
+    MAX_CRAWL_DEPTH,
+    MAX_URLS,
+)
 from .crawler import crawl, CrawlResult
 from .headers import analyse_headers
 from .payloads import (
@@ -111,7 +117,7 @@ async def _fetch(session: aiohttp.ClientSession, url: str, method: str = "GET",
             async with session.get(url, ssl=False, allow_redirects=False) as r:
                 text = await r.text(errors="replace")
                 return r.status, text, dict(r.headers)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return 0, "", {}
 
 
@@ -120,6 +126,7 @@ async def _fetch(session: aiohttp.ClientSession, url: str, method: str = "GET",
 async def _test_xss(
     session: aiohttp.ClientSession,
     crawl_result: CrawlResult,
+    payloads: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     XSS DETECTION LOGIC
@@ -130,11 +137,12 @@ async def _test_xss(
     sanitisation — a textbook Reflected XSS.
     """
     findings: list[dict[str, Any]] = []
+    xss_payloads = payloads or XSS_PAYLOADS
 
     # Test URL parameters
     for url, params in crawl_result.parameters.items():
         for param in params:
-            for payload in XSS_PAYLOADS:
+            for payload in xss_payloads:
                 test_url = _inject_param(url, param, payload)
                 status, body, _ = await _fetch(session, test_url)
                 if status and payload in body:
@@ -167,7 +175,7 @@ async def _test_xss(
     # Test form fields
     for form in crawl_result.forms:
         for input_name in form.inputs:
-            for payload in XSS_PAYLOADS:
+            for payload in xss_payloads:
                 test_data = {**form.inputs, input_name: payload}
                 status, body, _ = await _fetch(
                     session, form.action, method=form.method, data=test_data
@@ -199,6 +207,7 @@ async def _test_xss(
 async def _test_sqli(
     session: aiohttp.ClientSession,
     crawl_result: CrawlResult,
+    payloads: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     SQL INJECTION DETECTION LOGIC
@@ -209,10 +218,11 @@ async def _test_sqli(
     without parameterisation.
     """
     findings: list[dict[str, Any]] = []
+    sqli_payloads = payloads or SQLI_PAYLOADS
 
     for url, params in crawl_result.parameters.items():
         for param in params:
-            for payload in SQLI_PAYLOADS:
+            for payload in sqli_payloads:
                 test_url = _inject_param(url, param, payload)
                 status, body, _ = await _fetch(session, test_url)
                 if not status:
@@ -250,7 +260,7 @@ async def _test_sqli(
     # Test forms too
     for form in crawl_result.forms:
         for input_name in form.inputs:
-            for payload in SQLI_PAYLOADS:
+            for payload in sqli_payloads:
                 test_data = {**form.inputs, input_name: payload}
                 status, body, _ = await _fetch(
                     session, form.action, method=form.method, data=test_data
@@ -289,6 +299,7 @@ async def _test_sqli(
 async def _test_open_redirect(
     session: aiohttp.ClientSession,
     crawl_result: CrawlResult,
+    payloads: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     OPEN REDIRECT DETECTION
@@ -299,12 +310,13 @@ async def _test_open_redirect(
     that external URL.
     """
     findings: list[dict[str, Any]] = []
+    redirect_payloads = payloads or OPEN_REDIRECT_PAYLOADS
 
     for url, params in crawl_result.parameters.items():
         for param in params:
             if param.lower() not in REDIRECT_PARAM_NAMES:
                 continue
-            for payload in OPEN_REDIRECT_PAYLOADS:
+            for payload in redirect_payloads:
                 test_url = _inject_param(url, param, payload)
                 status, _, headers = await _fetch(session, test_url)
                 location = headers.get("Location", "")
@@ -336,6 +348,7 @@ async def _test_open_redirect(
 async def _test_directory_listing(
     session: aiohttp.ClientSession,
     target_url: str,
+    paths: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     DIRECTORY LISTING DETECTION
@@ -345,8 +358,9 @@ async def _test_directory_listing(
     enabled — exposing the file structure to anyone.
     """
     findings: list[dict[str, Any]] = []
+    directory_paths = paths or DIRECTORY_LISTING_PATHS
 
-    for path in DIRECTORY_LISTING_PATHS:
+    for path in directory_paths:
         url = urljoin(target_url, path)
         status, body, _ = await _fetch(session, url)
         if status == 200:
@@ -379,6 +393,7 @@ async def _test_directory_listing(
 async def _test_sensitive_files(
     session: aiohttp.ClientSession,
     target_url: str,
+    file_entries: list[dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     SENSITIVE FILE EXPOSURE
@@ -388,8 +403,9 @@ async def _test_sensitive_files(
     contains the expected signature means the file is exposed.
     """
     findings: list[dict[str, Any]] = []
+    sensitive_entries = file_entries or SENSITIVE_FILE_PATHS
 
-    for entry in SENSITIVE_FILE_PATHS:
+    for entry in sensitive_entries:
         url = urljoin(target_url, entry["path"])
         status, body, _ = await _fetch(session, url)
         matched_signature = _build_sensitive_signature_match(entry, body)
@@ -423,6 +439,7 @@ async def _test_sensitive_files(
 async def run_scan(
     scan_id: int,
     target_url: str,
+    scan_mode: str = "deep",
 ) -> list[dict[str, Any]]:
     """
     Execute a full vulnerability scan against *target_url*.
@@ -431,19 +448,53 @@ async def run_scan(
     Progress is tracked in ``_progress[scan_id]``.
     """
 
-    _set_progress(scan_id, 0, "crawling", "Discovering pages and forms…")
+    mode = (scan_mode or "deep").strip().lower()
+    if mode not in {"quick", "deep"}:
+        mode = "deep"
+
+    if mode == "quick":
+        profile = {
+            "crawl_depth": min(1, MAX_CRAWL_DEPTH),
+            "max_urls": min(12, MAX_URLS),
+            "request_timeout": min(5, REQUEST_TIMEOUT),
+            "scan_concurrency": min(8, SCAN_CONCURRENCY),
+            "xss_payloads": XSS_PAYLOADS[:2],
+            "sqli_payloads": SQLI_PAYLOADS[:2],
+            "open_redirect_payloads": OPEN_REDIRECT_PAYLOADS[:2],
+            "directory_paths": DIRECTORY_LISTING_PATHS[:4],
+            "sensitive_entries": SENSITIVE_FILE_PATHS[:4],
+        }
+    else:
+        profile = {
+            "crawl_depth": MAX_CRAWL_DEPTH,
+            "max_urls": MAX_URLS,
+            "request_timeout": REQUEST_TIMEOUT,
+            "scan_concurrency": SCAN_CONCURRENCY,
+            "xss_payloads": XSS_PAYLOADS,
+            "sqli_payloads": SQLI_PAYLOADS,
+            "open_redirect_payloads": OPEN_REDIRECT_PAYLOADS,
+            "directory_paths": DIRECTORY_LISTING_PATHS,
+            "sensitive_entries": SENSITIVE_FILE_PATHS,
+        }
+
+    _set_progress(scan_id, 0, "crawling", f"Discovering pages and forms ({mode} scan)…")
 
     # ── Step 1: Crawl ───────────────────────────────────────────────
     async def _crawl_progress(visited: int, total: int):
         pct = min(int(visited / max(total, 1) * 20), 20)  # 0-20 %
         _set_progress(scan_id, pct, "crawling", f"Visited {visited} pages…")
 
-    crawl_result = await crawl(target_url, on_progress=_crawl_progress)
+    crawl_result = await crawl(
+        target_url,
+        max_depth=profile["crawl_depth"],
+        max_urls=profile["max_urls"],
+        on_progress=_crawl_progress,
+    )
     _set_progress(scan_id, 20, "scanning", "Running vulnerability tests…")
 
     # ── Step 2: Run all tests concurrently ──────────────────────────
-    timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-    connector = aiohttp.TCPConnector(limit=SCAN_CONCURRENCY, ssl=False)
+    timeout = aiohttp.ClientTimeout(total=profile["request_timeout"])
+    connector = aiohttp.TCPConnector(limit=profile["scan_concurrency"], ssl=False)
 
     async with aiohttp.ClientSession(
         timeout=timeout,
@@ -452,11 +503,11 @@ async def run_scan(
     ) as session:
 
         tasks = [
-            _test_xss(session, crawl_result),
-            _test_sqli(session, crawl_result),
-            _test_open_redirect(session, crawl_result),
-            _test_directory_listing(session, target_url),
-            _test_sensitive_files(session, target_url),
+            _test_xss(session, crawl_result, payloads=profile["xss_payloads"]),
+            _test_sqli(session, crawl_result, payloads=profile["sqli_payloads"]),
+            _test_open_redirect(session, crawl_result, payloads=profile["open_redirect_payloads"]),
+            _test_directory_listing(session, target_url, paths=profile["directory_paths"]),
+            _test_sensitive_files(session, target_url, file_entries=profile["sensitive_entries"]),
         ]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)

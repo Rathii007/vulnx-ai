@@ -186,7 +186,7 @@ async def create_scan(
     await db.refresh(scan)
 
     # Launch scan in the background
-    task = asyncio.create_task(_background_scan(scan.id, target))
+    task = asyncio.create_task(_background_scan(scan.id, target, body.scan_mode))
     _scan_tasks[scan.id] = task
 
     return ScanOut(
@@ -201,7 +201,7 @@ async def create_scan(
     )
 
 
-async def _background_scan(scan_id: int, target_url: str):
+async def _background_scan(scan_id: int, target_url: str, scan_mode: str = "deep"):
     """
     Run the full scan pipeline and persist results.
 
@@ -219,7 +219,7 @@ async def _background_scan(scan_id: int, target_url: str):
         await db.commit()
 
         try:
-            findings = await run_scan(scan_id, target_url)
+            findings = await run_scan(scan_id, target_url, scan_mode=scan_mode)
 
             # Persist vulnerabilities
             for f in findings:

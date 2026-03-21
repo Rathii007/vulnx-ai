@@ -337,6 +337,12 @@ h1 {
   gap: 0.5rem;
 }
 
+.scan-mode-row {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 260px;
+}
+
 input {
   width: 100%;
   border-radius: 0.7rem;
@@ -349,7 +355,24 @@ input {
   transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
+select {
+  width: 100%;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(131, 168, 213, 0.28);
+  background: rgba(9, 16, 30, 0.78);
+  color: #e7f0fa;
+  padding: 0.64rem 0.8rem;
+  font-size: 0.92rem;
+  outline: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
 input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(95, 168, 255, 0.24);
+}
+
+select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(95, 168, 255, 0.24);
 }

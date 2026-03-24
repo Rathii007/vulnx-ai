@@ -57,12 +57,33 @@ Set these before starting the application in your deployment environment:
 - JWT_ALGORITHM=HS256
 - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=120
 - ALLOWED_ORIGINS=https://your-frontend-domain.com
+  - Use a comma-separated list for multiple frontends.
+  - Do not include a trailing slash.
+  - Example: ALLOWED_ORIGINS=https://vulnx-ai.vercel.app,http://localhost:3000
 - ENABLE_METRICS=true
 - SENTRY_DSN=<optional>
 
 ### Frontend environment
 
 - NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.com
+
+## Deploy (Render + Vercel)
+
+1. Push this repository to GitHub.
+2. Deploy backend on Render:
+  - Create a new Blueprint service and select this repository.
+  - Render will detect `render.yaml` at the repo root and create:
+    - `vulnx-backend` (Docker web service from `backend/`)
+    - `vulnx-postgres` (PostgreSQL database)
+  - After first deploy, confirm backend health at `/health/live`.
+3. Deploy frontend on Vercel:
+  - Import the same repository.
+  - Set project Root Directory to `frontend`.
+  - Add env var `NEXT_PUBLIC_API_BASE_URL` with your Render backend URL.
+4. Update backend CORS in Render env vars:
+  - `ALLOWED_ORIGINS=https://vulnx-ai.vercel.app`
+  - If you keep local testing too: `ALLOWED_ORIGINS=https://vulnx-ai.vercel.app,http://localhost:3000`
+5. Redeploy backend after changing env vars.
 
 - Frontend: http://localhost:3000
 - Backend: http://localhost:8000

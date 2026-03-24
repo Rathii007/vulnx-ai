@@ -22,18 +22,42 @@ def _as_bool(value: str | None, default: bool) -> bool:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
+
+def _normalize_origin(value: str) -> str:
+    return value.strip().rstrip("/")
+
+
+def _as_origin_list(value: str | None, default: str) -> list[str]:
+    raw = value if value is not None else default
+    origins: list[str] = []
+    for item in raw.split(","):
+        origin = _normalize_origin(item)
+        if origin and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+def _normalize_database_url(value: str) -> str:
+    db_url = value.strip()
+    if db_url.startswith("postgres://"):
+        return db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if db_url.startswith("postgresql://"):
+        return db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return db_url
+
 # ── Database ────────────────────────────────────────────────────────
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite+aiosqlite:///./scanner.db",
+DATABASE_URL = _normalize_database_url(
+    os.getenv(
+        "DATABASE_URL",
+        "sqlite+aiosqlite:///./scanner.db",
+    )
 )
 
 # ── API security / deployment settings ─────────────────────────────
-ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-    if origin.strip()
-]
+ALLOWED_ORIGINS = _as_origin_list(
+    os.getenv("ALLOWED_ORIGINS"),
+    "http://localhost:3000,http://127.0.0.1:3000,https://vulnx-ai.vercel.app",
+)
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")

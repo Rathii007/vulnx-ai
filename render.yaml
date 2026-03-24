@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: vulnx-backend
+    runtime: docker
+    rootDir: backend
+    autoDeploy: true
+    healthCheckPath: /health/live
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vulnx-postgres
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "120"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "120"
+      - key: ENABLE_METRICS
+        value: "true"
+      - key: ALLOWED_ORIGINS
+        value: https://vulnx-ai.vercel.app
+
+databases:
+  - name: vulnx-postgres
+    databaseName: scanner
+    user: scanner

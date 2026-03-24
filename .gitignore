@@ -1,6 +1,9 @@
 # Python
 __pycache__/
 *.py[cod]
+*.db
+backend/scanner.db
+scanner.db
 
 # Local env secrets
 backend/.env.local

@@ -19,7 +19,9 @@ import asyncio
 import datetime
 import json
 import logging
+import logging.config
 import time
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -55,11 +57,51 @@ from .security import (
     rate_limit_settings,
     verify_password,
 )
-from .config import ALLOWED_ORIGINS, ENABLE_METRICS, SENTRY_DSN
+from .config import ALLOWED_ORIGINS, ENABLE_METRICS, ENVIRONMENT, IS_PRODUCTION, LOG_FORMAT, LOG_LEVEL, SENTRY_DSN
+
+
+# ── Structured logging ──────────────────────────────────────────────
+
+def _configure_logging():
+    """Set up logging: JSON format in production, human-readable in dev."""
+    if LOG_FORMAT == "json":
+        fmt = json.dumps({
+            "time": "%(asctime)s",
+            "level": "%(levelname)s",
+            "name": "%(name)s",
+            "message": "%(message)s",
+        })
+    else:
+        fmt = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+
+    logging.basicConfig(
+        level=getattr(logging, LOG_LEVEL, logging.INFO),
+        format=fmt,
+        force=True,
+    )
+    # Quiet noisy libraries
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING if IS_PRODUCTION else logging.INFO)
+
+
+_configure_logging()
 
 
 # ── In-memory task tracking for scan cancellation ───────────────────
 _scan_tasks: dict[int, asyncio.Task] = {}
+
+
+# ── Lifespan ────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Startup / shutdown lifecycle hook."""
+    if SENTRY_DSN:
+        sentry_init(dsn=SENTRY_DSN, traces_sample_rate=0.2)
+        logger.info("Sentry initialized")
+    await init_db()
+    logger.info("VulnX API started (env=%s)", ENVIRONMENT)
+    yield
+    logger.info("VulnX API shutting down")
 
 
 # ── App creation ────────────────────────────────────────────────────
@@ -68,6 +110,9 @@ app = FastAPI(
     title="VulnX API",
     description="Educational web application security scanner",
     version="1.0.0",
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    lifespan=lifespan,
 )
 
 logger = logging.getLogger("vulnx.api")
@@ -103,13 +148,6 @@ async def request_metrics_middleware(request, call_next):
     return response
 
 
-@app.on_event("startup")
-async def startup():
-    """Create database tables on first run."""
-    if SENTRY_DSN:
-        sentry_init(dsn=SENTRY_DSN, traces_sample_rate=0.2)
-        logger.info("Sentry initialized")
-    await init_db()
 
 
 @app.get("/health/live")
@@ -228,12 +266,12 @@ async def _background_scan(scan_id: int, target_url: str, scan_mode: str = "deep
             # Calculate score
             scan.score = calculate_score(findings)
             scan.status = "completed"
-            scan.completed_at = datetime.datetime.utcnow()
+            scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
 
         except asyncio.CancelledError:
             # Scan was cancelled by user
             scan.status = "cancelled"
-            scan.completed_at = datetime.datetime.utcnow()
+            scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
             await db.commit()
             if scan_id in _scan_tasks:
                 del _scan_tasks[scan_id]

@@ -10,6 +10,8 @@ services:
         fromDatabase:
           name: vulnx-postgres
           property: connectionString
+      - key: ENVIRONMENT
+        value: production
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
@@ -22,6 +24,12 @@ services:
         value: "true"
       - key: ALLOWED_ORIGINS
         value: https://vulnx-ai.vercel.app
+      - key: AI_PROVIDER
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
 
 databases:
   - name: vulnx-postgres

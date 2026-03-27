@@ -148,7 +148,7 @@ def generate_pdf(
     # ── Meta info ───────────────────────────────────────────────────
     pdf.set_font("Helvetica", "", 11)
     _pdf_multiline(pdf, f"Target:  {target_url}", 7)
-    pdf.cell(0, 7, _pdf_text(f"Date:    {datetime.datetime.utcnow():%Y-%m-%d %H:%M UTC}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 7, _pdf_text(f"Date:    {datetime.datetime.now(datetime.timezone.utc):%Y-%m-%d %H:%M UTC}"), new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 7, _pdf_text(f"Score:   {score} / 100"), new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 7, _pdf_text(f"Issues:  {len(vulnerabilities)}"), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(6)

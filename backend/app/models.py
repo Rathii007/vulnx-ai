@@ -44,7 +44,7 @@ class User(Base):
     username = Column(String(100), nullable=False, unique=True, index=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc), nullable=False)
 
     scans = relationship("Scan", back_populates="user", cascade="all, delete-orphan")
 
@@ -70,7 +70,7 @@ class Scan(Base):
     status = Column(String(20), default="pending", nullable=False)
     score = Column(Float, nullable=True)           # 0-100 security score
     created_at = Column(
-        DateTime, default=datetime.datetime.utcnow, nullable=False
+        DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc), nullable=False
     )
     completed_at = Column(DateTime, nullable=True)
 

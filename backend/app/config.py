@@ -53,6 +53,14 @@ DATABASE_URL = _normalize_database_url(
     )
 )
 
+# ── Environment ─────────────────────────────────────────────────────
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT == "production"
+
+# ── Logging ─────────────────────────────────────────────────────────
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO" if IS_PRODUCTION else "DEBUG").upper()
+LOG_FORMAT = os.getenv("LOG_FORMAT", "json" if IS_PRODUCTION else "text").strip().lower()
+
 # ── API security / deployment settings ─────────────────────────────
 ALLOWED_ORIGINS = _as_origin_list(
     os.getenv("ALLOWED_ORIGINS"),
@@ -60,6 +68,11 @@ ALLOWED_ORIGINS = _as_origin_list(
 )
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+if IS_PRODUCTION and JWT_SECRET_KEY == "change-me-in-production":
+    raise RuntimeError(
+        "JWT_SECRET_KEY must be set to a strong random value in production. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+    )
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "120"))
 

@@ -81,6 +81,7 @@ def _configure_logging():
     )
     # Quiet noisy libraries
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING if IS_PRODUCTION else logging.INFO)
+    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 
 
 _configure_logging()

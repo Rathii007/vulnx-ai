@@ -1,101 +1,219 @@
-# VulnScanner
+# VulnX
 
-Production-hardened educational web vulnerability scanner with a FastAPI backend and Next.js frontend.
+VulnX is an educational web security workbench for launching authorized scans,
+monitoring progress in real time, and reviewing actionable findings. It is built
+with a FastAPI backend, a Next.js frontend, and SQLite for local development or
+PostgreSQL for deployed environments.
 
-## What Is Included In This Hardened Build
+> Only scan systems that you own or have explicit permission to test. This
+> project is intended for defensive learning and authorized security testing.
 
-- PostgreSQL-ready database configuration.
-- JWT auth (register/login/me endpoints) with per-user scan authorization.
-- SSRF-safe target validation and rate limiting.
-- Monitoring endpoints (`/health/*`, `/metrics`).
-- Optional Sentry error tracking via `SENTRY_DSN`.
+## Features
 
-## Run Locally (without Docker)
+- JWT registration, login, and per-user scan authorization.
+- Safe target URL validation with private-network SSRF protection.
+- Quick and deep scan modes.
+- Real-time scan progress using Server-Sent Events.
+- Findings grouped by severity, endpoint, confidence, and OWASP category.
+- PDF report generation.
+- Optional AI triage through Groq or a local Ollama model.
+- Health, readiness, metrics, rate limiting, and optional Sentry integration.
+- Docker Compose support for the API, frontend, and PostgreSQL.
 
-### Backend
+## Project Layout
 
-```bash
-cd backend
+```text
+backend/
+  app/
+    main.py          FastAPI routes and application lifecycle
+    scanner.py       Crawl and vulnerability checks
+    crawler.py       Target discovery
+    ai_assistant.py  Groq/Ollama triage and local fallback
+    database.py      Async SQLAlchemy setup
+    security.py      Authentication, validation, and rate limiting
+    report.py        PDF report generation
+  run.py             Local development launcher
+frontend/
+  src/app/page.tsx   Scanner dashboard
+docker-compose.yml   Local multi-service deployment
+render.yaml          Render deployment blueprint
+```
+
+## Requirements
+
+- Python 3.11 or newer
+- Node.js 20 or newer and npm
+- Docker Desktop, only if using Docker Compose
+- A Groq API key or a local Ollama installation, if AI triage is enabled
+
+## Local Setup
+
+### 1. Configure the backend
+
+From PowerShell:
+
+```powershell
+cd D:\scanner\backend
 python -m venv .venv
-.venv\Scripts\activate
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-set DATABASE_URL=postgresql+asyncpg://scanner:scanner@localhost:5432/scanner
-set JWT_SECRET_KEY=change-me-in-production
-set ALLOWED_ORIGINS=http://localhost:3000
+Copy-Item .env.example .env.local
+```
+
+Edit `backend/.env.local` and set at least a strong `JWT_SECRET_KEY`. For Groq
+triage, set:
+
+```env
+AI_ENABLED=true
+AI_PROVIDER=groq
+GROQ_API_KEY=your-key-here
+GROQ_MODEL=openai/gpt-oss-20b
+```
+
+The local default database is SQLite at `backend/scanner.db`. To use PostgreSQL,
+replace `DATABASE_URL` with a `postgresql+asyncpg://...` connection string.
+
+### 2. Start the backend
+
+Keep this terminal open:
+
+```powershell
+cd D:\scanner\backend
+.\.venv\Scripts\Activate.ps1
 python run.py
 ```
 
-### Frontend
+The API runs at http://127.0.0.1:8000.
+
+### 3. Start the frontend
+
+Open a second terminal:
+
+```powershell
+cd D:\scanner\frontend
+npm install
+npm run dev -- --hostname 127.0.0.1
+```
+
+Open http://127.0.0.1:3000 in a browser. The frontend reads the API URL from
+`NEXT_PUBLIC_API_BASE_URL`, which defaults to `http://localhost:8000`.
+
+### Other operating systems
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env.local
+python run.py
+```
+
+In a second terminal:
 
 ```bash
 cd frontend
 npm install
-set NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 npm run dev
 ```
 
-## Run with Docker Compose
+## Docker Compose
 
-```bash
-# from repo root
-set ALLOWED_ORIGINS=http://localhost:3000
-set NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-set JWT_SECRET_KEY=change-me-in-production
-set POSTGRES_PASSWORD=scanner
+From the repository root:
+
+```powershell
 docker compose up --build
 ```
 
-## Pre-Deploy Required Environment Variables
+This starts PostgreSQL on port `5432`, the backend on port `8000`, and the
+frontend on port `3000`. Open http://localhost:3000.
 
-Set these before starting the application in your deployment environment:
+To stop the services:
 
-### Backend environment
+```powershell
+docker compose down
+```
 
-- SCANNER_API_KEY=<strong-random-secret>
-- DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:5432/<db>
-- JWT_SECRET_KEY=<strong-random-secret>
-- JWT_ALGORITHM=HS256
-- JWT_ACCESS_TOKEN_EXPIRE_MINUTES=120
-- ALLOWED_ORIGINS=https://your-frontend-domain.com
-  - Use a comma-separated list for multiple frontends.
-  - Do not include a trailing slash.
-  - Example: ALLOWED_ORIGINS=https://vulnx-ai.vercel.app,http://localhost:3000
-- ENABLE_METRICS=true
-- SENTRY_DSN=<optional>
+Add `-v` only when you intentionally want to delete the PostgreSQL volume.
 
-### Frontend environment
+## Configuration
 
-- NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.com
+Backend configuration is loaded from `backend/.env` and then
+`backend/.env.local`, with `.env.local` taking precedence. Never commit either
+file when it contains credentials.
 
-## Deploy (Render + Vercel)
+Important variables include:
 
-1. Push this repository to GitHub.
-2. Deploy backend on Render:
-  - Create a new Blueprint service and select this repository.
-  - Render will detect `render.yaml` at the repo root and create:
-    - `vulnx-backend` (Docker web service from `backend/`)
-    - `vulnx-postgres` (PostgreSQL database)
-  - After first deploy, confirm backend health at `/health/live`.
-3. Deploy frontend on Vercel:
-  - Import the same repository.
-  - Set project Root Directory to `frontend`.
-  - Add env var `NEXT_PUBLIC_API_BASE_URL` with your Render backend URL.
-4. Update backend CORS in Render env vars:
-  - `ALLOWED_ORIGINS=https://vulnx-ai.vercel.app`
-  - If you keep local testing too: `ALLOWED_ORIGINS=https://vulnx-ai.vercel.app,http://localhost:3000`
-5. Redeploy backend after changing env vars.
+| Variable | Purpose | Local default |
+| --- | --- | --- |
+| `DATABASE_URL` | Async database connection | `sqlite+aiosqlite:///./scanner.db` |
+| `JWT_SECRET_KEY` | Signs access tokens | Set a private random value |
+| `ALLOWED_ORIGINS` | CORS allow-list | `http://localhost:3000` |
+| `AI_ENABLED` | Enables AI triage | `true` |
+| `AI_PROVIDER` | `groq` or `ollama` | `ollama` in the example |
+| `GROQ_API_KEY` | Groq credential | Empty |
+| `GROQ_MODEL` | Groq chat model | `openai/gpt-oss-20b` |
+| `AI_TIMEOUT_SECONDS` | AI request timeout | `20` |
+| `LOG_LEVEL` | Backend log verbosity | `INFO` locally |
 
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8000
-- Health checks:
-  - http://localhost:8000/health/live
-  - http://localhost:8000/health/ready
+If the remote AI provider is unavailable or returns invalid JSON, VulnX uses a
+deterministic local rule-based triage fallback and marks the result accordingly.
 
-## Production Hardening Included
+## API Endpoints
 
-- Configurable strict CORS allow-list.
-- JWT authentication with per-user scan authorization.
-- Basic per-IP rate limiting middleware.
-- Target URL validation with private-network SSRF blocking.
-- Health and metrics endpoints for orchestration and monitoring.
-- Optional Sentry integration for error tracking.
+Interactive API documentation is available at http://127.0.0.1:8000/docs in
+development mode.
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/health/live` | Liveness check |
+| `GET` | `/health/ready` | Readiness check |
+| `POST` | `/api/auth/register` | Create an account |
+| `POST` | `/api/auth/login` | Get a JWT access token |
+| `GET` | `/api/auth/me` | Get the current user |
+| `POST` | `/api/scans` | Start a scan |
+| `GET` | `/api/scans` | List the current user's scans |
+| `GET` | `/api/scans/{id}` | View scan details and findings |
+| `GET` | `/api/scans/{id}/progress` | Stream scan progress via SSE |
+| `GET` | `/api/scans/{id}/report/pdf` | Download a PDF report |
+| `GET` | `/metrics` | Prometheus metrics when enabled |
+
+## Validation
+
+Backend syntax check:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m py_compile app\main.py run.py
+```
+
+Frontend lint and production build:
+
+```powershell
+cd frontend
+npm run lint
+npm run build
+```
+
+## Deployment
+
+The repository includes `render.yaml` for a Render backend/PostgreSQL setup and
+the frontend can be deployed separately from the `frontend` directory, for
+example on Vercel. Set production secrets in the hosting provider's environment
+configuration, configure `ALLOWED_ORIGINS` with the exact frontend origin, and
+set `NEXT_PUBLIC_API_BASE_URL` to the deployed backend URL.
+
+Before publishing or deploying:
+
+- Rotate any API key that has been exposed.
+- Confirm `.env`, `.env.local`, databases, and virtual environments are ignored.
+- Use a strong production `JWT_SECRET_KEY`.
+- Restrict CORS to trusted frontend origins.
+- Run a fresh scan only against an authorized target.
+
+## Contributing
+
+1. Create a feature branch.
+2. Keep changes focused and document configuration changes.
+3. Run backend syntax checks and frontend lint/build before opening a pull request.
+4. Do not commit credentials, local databases, scan output, or generated build files.

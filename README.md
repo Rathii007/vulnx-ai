@@ -5,6 +5,10 @@ monitoring progress in real time, and reviewing actionable findings. It is built
 with a FastAPI backend, a Next.js frontend, and SQLite for local development or
 PostgreSQL for deployed environments.
 
+It demonstrates authenticated scanning workflows, safe target validation, API
+security, data protection, and modern deployment practices for authorized
+security learning and experimentation.
+
 > Only scan systems that you own or have explicit permission to test. This
 > project is intended for defensive learning and authorized security testing.
 

@@ -57,7 +57,7 @@ type AISummary = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const TOKEN_STORAGE_KEY = "scanner_access_token";
-const GITHUB_REPO_URL = "https://github.com/Rathii007/AI-Powered-Web-Vulnerability-Scanner";
+const GITHUB_REPO_URL = "https://github.com/Rathii007/vulnx-ai";
 
 function buildApiUrl(path: string, tokenForQuery?: string) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
